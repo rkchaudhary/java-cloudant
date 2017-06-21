@@ -26,6 +26,7 @@ import com.cloudant.http.HttpConnectionInterceptor;
 import com.cloudant.http.HttpConnectionRequestInterceptor;
 import com.cloudant.http.HttpConnectionResponseInterceptor;
 import com.cloudant.http.internal.interceptors.CookieInterceptor;
+import com.cloudant.http.internal.interceptors.IamCookieInterceptor;
 import com.cloudant.http.internal.interceptors.ProxyAuthInterceptor;
 import com.cloudant.http.internal.interceptors.SSLCustomizerInterceptor;
 import com.cloudant.http.internal.interceptors.TimeoutCustomizationInterceptor;
@@ -160,6 +161,7 @@ public class ClientBuilder {
     private TimeUnit connectTimeoutUnit = TimeUnit.MINUTES;
     private long readTimeout = DEFAULT_READ_TIMEOUT;
     private TimeUnit readTimeoutUnit = TimeUnit.MINUTES;
+    private String iamApiKey;
 
     /**
      * Constructs a new ClientBuilder for building a CloudantClient instance to connect to the
@@ -233,6 +235,7 @@ public class ClientBuilder {
         }
     }
 
+
     /**
      * Build the {@link CloudantClient} instance based on the endpoint used to construct this
      * client builder and the options that have been set on it before calling this method.
@@ -248,9 +251,19 @@ public class ClientBuilder {
 
         props.addRequestInterceptors(USER_AGENT_INTERCEPTOR);
 
+        if (this.iamApiKey != null) {
+            //make interceptor if both username and password are not null
 
+            //Create cookie interceptor and set in HttpConnection interceptors
+            IamCookieInterceptor cookieInterceptor = new IamCookieInterceptor(this.iamApiKey, this.url.toString());
+
+            props.addRequestInterceptors(cookieInterceptor);
+            props.addResponseInterceptors(cookieInterceptor);
+            logger.config("Added IAM cookie interceptor");
+
+        }
         //Create cookie interceptor
-        if (this.username != null && this.password != null) {
+        else if (this.username != null && this.password != null) {
             //make interceptor if both username and password are not null
 
             //Create cookie interceptor and set in HttpConnection interceptors
@@ -711,4 +724,11 @@ public class ClientBuilder {
                 String.format("Cloudant service instance matching name %s was not found.", instanceName)
         );
     }
+
+    public ClientBuilder iamApiKey(String iamApiKey) {
+        this.iamApiKey = iamApiKey;
+        return this;
+    }
+
+
 }

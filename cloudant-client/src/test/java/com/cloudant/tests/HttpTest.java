@@ -345,6 +345,65 @@ public class HttpTest extends HttpFactoryParameterizedTest {
     }
 
     /**
+     * This test check that the cookie is renewed if the server presents a Set-Cookie header
+     * after the cookie authentication.
+     *
+     * @throws Exception
+     */
+    @Test
+    public void iamCookieRenewal() throws Exception {
+        final String hello = "{\"hello\":\"world\"}\r\n";
+        final String authSession = "AuthSession=";
+        final String renewalCookieToken =
+                "RenewCookie_a2ltc3RlYmVsOjUxMzRBQTUzOtiY2_IDUIdsTJEVNEjObAbyhrgz";
+        final String renewalCookieValue = authSession + renewalCookieToken;
+
+        // Request sequence
+        // _session request to get Cookie
+        // GET request -> 200 with a Set-Cookie
+        // GET replay -> 200
+        mockWebServer.enqueue(MockWebServerResources.OK_COOKIE);
+        mockWebServer.enqueue(new MockResponse().setResponseCode(200).addHeader("Set-Cookie",
+                String.format(Locale.ENGLISH, "%s;", renewalCookieValue
+                        + MockWebServerResources.COOKIE_PROPS))
+                .setBody(hello));
+        mockWebServer.enqueue(new MockResponse());
+
+        CloudantClient c = CloudantClientHelper.newMockWebServerClientBuilder(mockWebServer)
+                .iamApiKey("iam")
+                .build();
+
+        String response = c.executeRequest(Http.GET(c.getBaseUri())).responseAsString();
+        assertEquals("The expected response should be received", hello, response);
+
+        // assert that there were 2 calls
+        assertEquals("The server should have received 2 requests", 2, mockWebServer
+                .getRequestCount());
+
+        assertEquals("The request should have been for /_iam_session", "/_iam_session",
+                MockWebServerResources.takeRequestWithTimeout(mockWebServer).getPath());
+        assertEquals("The request should have been for /", "/",
+                MockWebServerResources.takeRequestWithTimeout(mockWebServer).getPath());
+
+        String secondResponse = c.executeRequest(Http.GET(c.getBaseUri())).responseAsString();
+        assertTrue("There should be no response body on the mock response" + secondResponse,
+                secondResponse.isEmpty());
+
+        // also assert that there were 3 calls
+        assertEquals("The server should have received 3 requests", 3, mockWebServer
+                .getRequestCount());
+
+        // this is the request that should have the new cookie.
+        RecordedRequest request = MockWebServerResources.takeRequestWithTimeout(mockWebServer);
+        assertEquals("The request should have been for path /", "/", request.getPath());
+        String headerValue = request.getHeader("Cookie");
+        // The cookie may or may not have the session id quoted, so check both
+        assertThat("The Cookie header should contain the expected session value", headerValue,
+                anyOf(containsString(renewalCookieValue), containsString(authSession + "\"" +
+                        renewalCookieToken + "\"")));
+    }
+
+    /**
      * This test checks that the cookie is successfully renewed if a 403 with an error of
      * "credentials_expired" is returned.
      *
